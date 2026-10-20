@@ -15,4 +15,4 @@ def start(message):
         "O‘yinni boshlash uchun guruhga qo‘shing."
     )
 
-bot.infinity_polling()
+bot.infinity_polling(
