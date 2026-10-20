@@ -1,0 +1,160 @@
+
+import os
+import random
+import logging
+
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+)
+
+logging.basicConfig(level=logging.INFO)
+TOKEN = os.getenv("BOT_TOKEN")
+
+# Hozircha bitta guruh uchun oddiy o'yin xotirasi
+players = {}
+game_started = False
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🕵️ SOFT-MAFIA botiga xush kelibsiz!\n\n"
+        "Buyruqlar:\n"
+        "/newgame — yangi o'yin\n"
+        "/join — o'yinga qo'shilish\n"
+        "/players — o'yinchilar ro'yxati\n"
+        "/startgame — o'yinni boshlash"
+    )
+
+
+async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global game_started
+
+    if update.effective_chat.type == "private":
+        await update.message.reply_text(
+            "O'yinni Telegram guruhida yaratish kerak."
+        )
+        return
+
+    players.clear()
+    game_started = False
+
+    await update.message.reply_text(
+        "🎭 Yangi Mafia o'yini yaratildi!\n"
+        "Qo'shilish uchun /join buyrug'ini yuboring."
+    )
+
+
+async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global game_started
+
+    user = update.effective_user
+    chat = update.effective_chat
+
+    if chat.type == "private":
+        await update.message.reply_text(
+            "O'yinga qo'shilish uchun guruhda /join yuboring."
+        )
+        return
+
+    if game_started:
+        await update.message.reply_text("O'yin allaqachon boshlangan.")
+        return
+
+    if user.id in players:
+        await update.message.reply_text("Siz allaqachon qo'shilgansiz.")
+        return
+
+    players[user.id] = {
+        "name": user.full_name,
+        "role": None,
+    }
+
+    await update.message.reply_text(
+        f"✅ {user.full_name} o'yinga qo'shildi! "
+        f"O'yinchilar: {len(players)}"
+    )
+
+
+async def show_players(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    if not players:
+        await update.message.reply_text("Hali o'yinchilar yo'q.")
+        return
+
+    names = [
+        f"{i}. {p['name']}"
+        for i, p in enumerate(players.values(), start=1)
+    ]
+
+    await update.message.reply_text(
+        "🎮 O'yinchilar:\n" + "\n".join(names)
+    )
+
+
+async def startgame(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+    global game_started
+
+    if game_started:
+        await update.message.reply_text("O'yin boshlangan.")
+        return
+
+    if len(players) < 4:
+        await update.message.reply_text(
+            "Kamida 4 o'yinchi kerak. /join orqali qo'shiling."
+        )
+        return
+
+    ids = list(players.keys())
+    roles = ["Mafia"] + ["Tinch aholi"] * (len(ids) - 1)
+    random.shuffle(roles)
+
+    for user_id, role in zip(ids, roles):
+        players[user_id]["role"] = role
+
+    game_started = True
+
+    await update.message.reply_text(
+        "🌙 O'yin boshlandi! Rollar shaxsiy xabarda yuboriladi."
+    )
+
+    for user_id in ids:
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"🎭 Sizning rolingiz: {players[user_id]['role']}\n"
+                    "Hozircha rolingizni boshqalarga aytmang."
+                ),
+            )
+        except Exception:
+            logging.exception("Rol yuborilmadi: %s", user_id)
+
+    await update.message.reply_text(
+        "Agar rol kelmagan bo'lsa, botga shaxsiy chatda /start yuboring."
+    )
+
+
+def main():
+    if not TOKEN:
+        raise RuntimeError("BOT_TOKEN sozlanmagan!")
+
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("newgame", newgame))
+    app.add_handler(CommandHandler("join", join))
+    app.add_handler(CommandHandler("players", show_players))
+    app.add_handler(CommandHandler("startgame", startgame))
+
+    print("SOFT-MAFIA bot ishga tushmoqda...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
